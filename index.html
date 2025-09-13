@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sim OCR Tool</title>
+    <title>Image OCR Tool</title>
     <!-- Use Tailwind CSS for easy styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,19 +14,19 @@
             font-family: 'Inter', sans-serif;
             background-color: #0f172a;
         }
-        /* Custom styles for drag-and-drop */
-        .drop-zone {
-            border: 2px dashed transparent;
-            transition: border-color 0.2s ease-in-out;
+        /* Style to indicate the entire body is a drop zone */
+        body.drag-over {
+            border: 2px dashed #38bdf8; /* Sky 400 */
         }
-        .drop-zone.drag-over {
-            border-color: #38bdf8; /* Sky 400 */
+        /* Custom styles for the main container */
+        .drop-zone-container {
+            transition: border-color 0.2s ease-in-out;
         }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
 
-    <div id="drop-zone" class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl mb-8 drop-zone">
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl mb-8 drop-zone-container">
         <h1 class="text-3xl font-bold mb-4 text-center text-teal-400">DPS.REPORT.DLL</h1>
         <p class="text-gray-400 text-center mb-6">Extract Names and Scores From ARC DPS ScreenShot</p>
         <div class="space-y-4">
@@ -63,7 +63,7 @@
         const imageInput = document.getElementById('imageInput');
         const processBtn = document.getElementById('processBtn');
         const resultsDiv = document.getElementById('results');
-        const dropZone = document.getElementById('drop-zone');
+        const body = document.body;
         const copyBtn = document.getElementById('copyBtn');
 
         const functionUrl = 'https://owfjbkyzzbxikrkqqlli.supabase.co/functions/v1/smart-task';
@@ -177,19 +177,22 @@
             }
         });
 
-        // Handle drag-and-drop
-        dropZone.addEventListener('dragover', (e) => {
+        // Handle drag-and-drop on the entire body
+        body.addEventListener('dragover', (e) => {
             e.preventDefault();
-            dropZone.classList.add('drag-over');
+            body.classList.add('drag-over');
         });
 
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('drag-over');
+        body.addEventListener('dragleave', (e) => {
+            // Check if the related target is outside the body
+            if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+                body.classList.remove('drag-over');
+            }
         });
 
-        dropZone.addEventListener('drop', (e) => {
+        body.addEventListener('drop', (e) => {
             e.preventDefault();
-            dropZone.classList.remove('drag-over');
+            body.classList.remove('drag-over');
             const files = e.dataTransfer.files;
             
             if (files.length > 0) {
