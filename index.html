@@ -64,10 +64,10 @@
 
         const functionUrl = 'https://owfjbkyzzbxikrkqqlli.supabase.co/functions/v1/smart-task';
 
-        // A unified function to handle file processing, called from multiple event listeners
+        // A unified function to handle file processing, called from the button click
         async function handleFiles(files) {
             if (files.length === 0) {
-                resultsDiv.textContent = "Error: Please select or drop one or more image files.";
+                resultsDiv.textContent = "Error: Please select one or more image files.";
                 resultsDiv.classList.add('text-red-400');
                 return;
             }
@@ -151,7 +151,11 @@
             e.preventDefault();
             dropZone.classList.remove('drag-over');
             const files = e.dataTransfer.files;
-            handleFiles(files);
+            
+            if (files.length > 0) {
+                imageInput.files = files; // Assign files to the input element
+                resultsDiv.textContent = `${files.length} image(s) ready to be processed. Click the button to continue.`;
+            }
         });
 
         // Handle pasting images
@@ -159,7 +163,8 @@
             const files = e.clipboardData.files;
             if (files.length > 0) {
                 e.preventDefault();
-                handleFiles(files);
+                imageInput.files = files; // Assign files to the input element
+                resultsDiv.textContent = `${files.length} image(s) pasted and ready to be processed. Click the button to continue.`;
             }
         });
 
