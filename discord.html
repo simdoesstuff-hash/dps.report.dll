@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image OCR Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl mb-8">
+        <h1 class="text-3xl font-bold mb-4 text-center text-teal-400">DPS.REPORT.DLL</h1>
+        <p class="text-gray-400 text-center mb-6">Extract Names and Scores From ARC DPS ScreenShot</p>
+        <div class="space-y-4">
+            <div>
+                <label for="imageInput" class="block text-sm font-medium text-gray-300">Choose Image Files:</label>
+                <input type="file" id="imageInput" accept="image/*" multiple class="mt-1 block w-full text-gray-400
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-teal-500 file:text-white
+                        hover:file:bg-teal-600 cursor-pointer">
+            </div>
+            <button id="processBtn" class="w-full bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                Process Images
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl">
+        <h2 class="text-2xl font-bold mb-4 text-center text-teal-400">Scores Leaderboard</h2>
+        <div id="results" class="bg-gray-700 p-4 rounded-md overflow-x-auto text-gray-200 whitespace-pre-wrap">
+            Results will appear here...
+        </div>
+    </div>
+
+    <footer class="mt-8 text-center text-gray-500 text-sm">
+        <p>Made by sim</p>
+    </footer>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const processBtn = document.getElementById('processBtn');
+        const resultsDiv = document.getElementById('results');
+
+        const functionUrl = 'https://owfjbkyzzbxikrkqqlli.supabase.co/functions/v1/smart-task';
+
+        processBtn.addEventListener('click', async () => {
+            const files = imageInput.files;
+
+            if (files.length === 0) {
+                resultsDiv.textContent = "Error: Please select one or more image files.";
+                resultsDiv.classList.add('text-red-400');
+                return;
+            }
+
+            resultsDiv.textContent = "Processing images...";
+            resultsDiv.classList.remove('text-red-400');
+            processBtn.disabled = true;
+
+            const playerScores = {};
+            const processingPromises = [];
+
+            for (const file of files) {
+                processingPromises.push(new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                        const base64Image = reader.result.split(',')[1];
+                        try {
+                            const scores = await processSingleImage(functionUrl, base64Image);
+                            resolve(scores);
+                        } catch (e) {
+                            reject(e);
+                        }
+                    };
+                    reader.onerror = () => {
+                        reject(new Error("Failed to read the image file."));
+                    };
+                    reader.readAsDataURL(file);
+                }));
+            }
+
+            try {
+                const results = await Promise.all(processingPromises);
+                results.forEach(scores => {
+                    scores.forEach(player => {
+                        const normalizedScore = parseFloat(player.score);
+                        playerScores[player.name] = (playerScores[player.name] || 0) + normalizedScore;
+                    });
+                });
+
+                const sortedScores = Object.keys(playerScores).map(name => ({
+                    name,
+                    score: playerScores[name]
+                })).sort((a, b) => b.score - a.score);
+
+                let output = "Total Scores Leaderboard:\n";
+                if (sortedScores.length > 0) {
+                    sortedScores.forEach(player => {
+                        output += `${player.name}: ${player.score.toLocaleString('en-US', { maximumFractionDigits: 5 })}M\n`;
+                    });
+                    resultsDiv.textContent = output;
+                } else {
+                    resultsDiv.textContent = "Could not find any scores in the images.";
+                }
+
+            } catch (e) {
+                resultsDiv.textContent = `An error occurred: ${e.message}.`;
+                resultsDiv.classList.add('text-red-400');
+            } finally {
+                processBtn.disabled = false;
+            }
+        });
+
+        async function processSingleImage(functionUrl, base64Image) {
+            try {
+                const response = await fetch(functionUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ base64Image: base64Image })
+                });
+                
+                const responseJson = await response.json();
+
+                if (response.ok && responseJson.candidates && responseJson.candidates.length > 0) {
+                    const extractedText = responseJson.candidates[0].content.parts[0].text;
+                    const detectedScores = [];
+                    const lines = extractedText.split('\n');
+                    
+                    lines.forEach(line => {
+                        if (line.includes(':')) {
+                            const parts = line.split(':', 2);
+                            if (parts.length === 2) {
+                                let [name, score_text] = parts;
+                                name = name.trim();
+                                
+                                if (name.includes('.')) {
+                                    name = name.split('.')[0];
+                                }
+                                    
+                                score_text = score_text.trim().toUpperCase();
+                                let score_value;
+
+                                if (score_text.endsWith('K')) {
+                                    score_value = parseFloat(score_text.replace('K', '')) / 1000.0;
+                                    detectedScores.push({ name, score: score_value });
+                                } else if (score_text.endsWith('M')) {
+                                    score_value = parseFloat(score_text.replace('M', ''));
+                                    detectedScores.push({ name, score: score_value });
+                                }
+                            }
+                        }
+                    });
+                    return detectedScores;
+                } else {
+                    throw new Error("Failed to get a valid response from the Gemini API via the Edge Function.");
+                }
+            } catch (e) {
+                throw new Error(`An error occurred in the image processing: ${e.message}`);
+            }
+        }
+    </script>
+</body>
+</html>
