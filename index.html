@@ -228,6 +228,7 @@
                 if (response.ok && responseJson.candidates && responseJson.candidates.length > 0) {
                     const extractedText = responseJson.candidates[0].content.parts[0].text;
                     const detectedScores = [];
+                    const processedNames = new Set(); // Use a Set to track names within a single image
                     const lines = extractedText.split('\n');
                     
                     lines.forEach(line => {
@@ -240,16 +241,19 @@
                                 if (name.includes('.')) {
                                     name = name.split('.')[0];
                                 }
-                                    
-                                score_text = score_text.trim().toUpperCase();
-                                let score_value;
+                                
+                                if (!processedNames.has(name)) {
+                                    processedNames.add(name);
+                                    score_text = score_text.trim().toUpperCase();
+                                    let score_value;
 
-                                if (score_text.endsWith('K')) {
-                                    score_value = parseFloat(score_text.replace('K', '')) / 1000.0;
-                                    detectedScores.push({ name, score: score_value });
-                                } else if (score_text.endsWith('M')) {
-                                    score_value = parseFloat(score_text.replace('M', ''));
-                                    detectedScores.push({ name, score: score_value });
+                                    if (score_text.endsWith('K')) {
+                                        score_value = parseFloat(score_text.replace('K', '')) / 1000.0;
+                                        detectedScores.push({ name, score: score_value });
+                                    } else if (score_text.endsWith('M')) {
+                                        score_value = parseFloat(score_text.replace('M', ''));
+                                        detectedScores.push({ name, score: score_value });
+                                    }
                                 }
                             }
                         }
