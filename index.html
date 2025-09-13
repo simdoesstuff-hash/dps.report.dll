@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image OCR Tool</title>
+    <title>Sim OCR Tool</title>
     <!-- Use Tailwind CSS for easy styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -50,6 +50,9 @@
         <div id="results" class="bg-gray-700 p-4 rounded-md overflow-x-auto text-gray-200 whitespace-pre-wrap">
             Results will appear here...
         </div>
+        <button id="copyBtn" class="mt-4 w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 hidden">
+            Copy to Clipboard
+        </button>
     </div>
 
     <footer class="mt-8 text-center text-gray-500 text-sm">
@@ -61,8 +64,11 @@
         const processBtn = document.getElementById('processBtn');
         const resultsDiv = document.getElementById('results');
         const dropZone = document.getElementById('drop-zone');
+        const copyBtn = document.getElementById('copyBtn');
 
         const functionUrl = 'https://owfjbkyzzbxikrkqqlli.supabase.co/functions/v1/smart-task';
+
+        let clipboardOutput = '';
 
         // A unified function to handle file processing, called from the button click
         async function handleFiles(files) {
@@ -72,11 +78,13 @@
                 return;
             }
 
-            resultsDiv.textContent = "Processing images...";
+            resultsDiv.textContent = `Processing ${files.length} image(s)...`;
             resultsDiv.classList.remove('text-red-400');
             processBtn.disabled = true;
+            copyBtn.classList.add('hidden');
 
             const playerScores = {};
+            let successfulCount = 0;
             const processingPromises = [];
 
             for (const file of files) {
@@ -86,6 +94,9 @@
                         const base64Image = reader.result.split(',')[1];
                         try {
                             const scores = await processSingleImage(functionUrl, base64Image);
+                            if (scores.length > 0) {
+                                successfulCount++;
+                            }
                             resolve(scores);
                         } catch (e) {
                             reject(e);
@@ -112,12 +123,20 @@
                     score: playerScores[name]
                 })).sort((a, b) => b.score - a.score);
 
-                let output = "Total Scores Leaderboard:\n";
+                let displayOutput = '';
+                let clipboardText = '';
+
                 if (sortedScores.length > 0) {
                     sortedScores.forEach(player => {
-                        output += `${player.name}: ${player.score.toLocaleString('en-US', { maximumFractionDigits: 5 })}M\n`;
+                        // The on-screen output includes the 'M' for millions
+                        const formattedScore = player.score.toLocaleString('en-US', { maximumFractionDigits: 5 });
+                        displayOutput += `${player.name}: ${formattedScore}M\n`;
+                        // The clipboard output now also uses the formatted score and M suffix
+                        clipboardText += `${player.name}: ${formattedScore}M\n`;
                     });
-                    resultsDiv.textContent = output;
+                    resultsDiv.textContent = `Successfully processed ${successfulCount}/${files.length} image(s).\n\n${displayOutput}`;
+                    clipboardOutput = clipboardText;
+                    copyBtn.classList.remove('hidden');
                 } else {
                     resultsDiv.textContent = "Could not find any scores in the images.";
                 }
@@ -135,6 +154,27 @@
         // Listen for the "Process Images" button click
         processBtn.addEventListener('click', () => {
             handleFiles(imageInput.files);
+        });
+        
+        // Listen for "Copy to Clipboard" button click
+        copyBtn.addEventListener('click', () => {
+            const textToCopy = clipboardOutput;
+            try {
+                const tempTextArea = document.createElement('textarea');
+                tempTextArea.value = textToCopy;
+                document.body.appendChild(tempTextArea);
+                tempTextArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempTextArea);
+
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy to Clipboard';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+                copyBtn.textContent = 'Failed to copy';
+            }
         });
 
         // Handle drag-and-drop
@@ -155,6 +195,7 @@
             if (files.length > 0) {
                 imageInput.files = files; // Assign files to the input element
                 resultsDiv.textContent = `${files.length} image(s) ready to be processed. Click the button to continue.`;
+                copyBtn.classList.add('hidden'); // Hide the copy button if new files are added
             }
         });
 
@@ -165,6 +206,7 @@
                 e.preventDefault();
                 imageInput.files = files; // Assign files to the input element
                 resultsDiv.textContent = `${files.length} image(s) pasted and ready to be processed. Click the button to continue.`;
+                copyBtn.classList.add('hidden'); // Hide the copy button if new files are added
             }
         });
 
