@@ -22,6 +22,12 @@
         .drop-zone-container {
             transition: border-color 0.2s ease-in-out;
         }
+        .within-limit {
+            color: #10b981; /* Green 500 */
+        }
+        .exceed-limit {
+            color: #ffffff; /* White */
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
@@ -70,6 +76,35 @@
 
         let clipboardOutput = '';
 
+        // Function to apply 190-character limit to clipboard content
+        function applyCharacterLimit(text) {
+            const lines = text.split('\n');
+            let result = '';
+            let totalChars = 0;
+            const includedLines = [];
+
+            for (const line of lines) {
+                // +1 for the newline character (except the last line)
+                const lineLength = line.length + (result ? 1 : 0);
+                
+                if (totalChars + lineLength <= 190) {
+                    if (result) result += '\n';
+                    result += line;
+                    totalChars += lineLength;
+                    includedLines.push(line);
+                } else {
+                    break;
+                }
+            }
+
+            return {
+                limitedText: result,
+                includedLines: includedLines,
+                totalChars: totalChars,
+                isLimited: result !== text
+            };
+        }
+
         // A unified function to handle file processing, called from the button click
         async function handleFiles(files) {
             if (files.length === 0) {
@@ -79,7 +114,7 @@
             }
 
             resultsDiv.textContent = `Processing ${files.length} image(s)...`;
-            resultsDiv.classList.remove('text-red-400');
+            resultsDiv.classList.remove('text-red-400', 'within-limit', 'exceed-limit');
             processBtn.disabled = true;
             copyBtn.classList.add('hidden');
 
@@ -128,14 +163,34 @@
 
                 if (sortedScores.length > 0) {
                     sortedScores.forEach(player => {
-                        // The on-screen output includes the 'M' for millions
                         const formattedScore = player.score.toLocaleString('en-US', { maximumFractionDigits: 5 });
-                        displayOutput += `${player.name}: ${formattedScore}M\n`;
-                        // The clipboard output now also uses the formatted score and M suffix
-                        clipboardText += `${player.name}: ${formattedScore}M\n`;
+                        const line = `${player.name}: ${formattedScore}M`;
+                        displayOutput += `${line}\n`;
+                        clipboardText += `${line}\n`;
                     });
-                    resultsDiv.textContent = `Successfully processed ${successfulCount}/${files.length} image(s).\n\n${displayOutput}`;
-                    clipboardOutput = clipboardText;
+
+                    // Apply character limit to clipboard content (working in background)
+                    const limitedResult = applyCharacterLimit(clipboardText.trim());
+                    clipboardOutput = limitedResult.limitedText;
+
+                    // Create color-coded display
+                    let colorCodedOutput = `Successfully processed ${successfulCount}/${files.length} image(s).\n\n`;
+                    
+                    sortedScores.forEach(player => {
+                        const formattedScore = player.score.toLocaleString('en-US', { maximumFractionDigits: 5 });
+                        const line = `${player.name}: ${formattedScore}M`;
+                        
+                        // Check if this line is included in the clipboard output
+                        const isIncluded = limitedResult.includedLines.includes(line);
+                        
+                        if (isIncluded) {
+                            colorCodedOutput += `<span class="within-limit">${line}</span>\n`;
+                        } else {
+                            colorCodedOutput += `<span class="exceed-limit">${line}</span>\n`;
+                        }
+                    });
+
+                    resultsDiv.innerHTML = colorCodedOutput;
                     copyBtn.classList.remove('hidden');
                 } else {
                     resultsDiv.textContent = "Could not find any scores in the images.";
@@ -158,10 +213,9 @@
         
         // Listen for "Copy to Clipboard" button click
         copyBtn.addEventListener('click', () => {
-            const textToCopy = clipboardOutput;
             try {
                 const tempTextArea = document.createElement('textarea');
-                tempTextArea.value = textToCopy;
+                tempTextArea.value = clipboardOutput;
                 document.body.appendChild(tempTextArea);
                 tempTextArea.select();
                 document.execCommand('copy');
@@ -198,7 +252,7 @@
             if (files.length > 0) {
                 imageInput.files = files; // Assign files to the input element
                 resultsDiv.textContent = `${files.length} image(s) ready to be processed. Click the button to continue.`;
-                copyBtn.classList.add('hidden'); // Hide the copy button if new files are added
+                copyBtn.classList.add('hidden');
             }
         });
 
@@ -209,7 +263,7 @@
                 e.preventDefault();
                 imageInput.files = files; // Assign files to the input element
                 resultsDiv.textContent = `${files.length} image(s) pasted and ready to be processed. Click the button to continue.`;
-                copyBtn.classList.add('hidden'); // Hide the copy button if new files are added
+                copyBtn.classList.add('hidden');
             }
         });
 
@@ -269,7 +323,3 @@
     </script>
 </body>
 </html>
-
-
-
-
