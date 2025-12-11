@@ -14,20 +14,11 @@
             font-family: 'Inter', sans-serif;
             background-color: #0f172a;
         }
-        /* Style to indicate the entire body is a drop zone */
         body.drag-over {
-            border: 2px dashed #38bdf8; /* Sky 400 */
+            border: 2px dashed #38bdf8; 
         }
-        /* Custom styles for the main container */
-        .drop-zone-container {
-            transition: border-color 0.2s ease-in-out;
-        }
-        .within-limit {
-            color: #10b981; /* Green 500 */
-        }
-        .exceed-limit {
-            color: #ffffff; /* White */
-        }
+        .within-limit { color: #10b981; }
+        .exceed-limit { color: #ffffff; }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center p-4">
@@ -66,17 +57,25 @@
     </footer>
 
     <script>
+        // ==========================================
+        // CONFIGURATION
+        // ==========================================
+        
+        // 1. Paste your Google AI Studio API Key here:
+        const GOOGLE_API_KEY = "AIzaSyA7Yk41t2XS4lF0tCaC2A_eFRpEQzqASvA"; 
+
+        // ==========================================
+
         const imageInput = document.getElementById('imageInput');
         const processBtn = document.getElementById('processBtn');
         const resultsDiv = document.getElementById('results');
         const body = document.body;
         const copyBtn = document.getElementById('copyBtn');
 
-        const functionUrl = 'https://owfjbkyzzbxikrkqqlli.supabase.co/functions/v1/smart-task';
-
         let clipboardOutput = '';
+        let detectedModelName = null; // We will store the discovered model here
 
-        // Function to apply 190-character limit to clipboard content
+        // Function to apply 190-character limit
         function applyCharacterLimit(text) {
             const lines = text.split('\n');
             let result = '';
@@ -84,9 +83,7 @@
             const includedLines = [];
 
             for (const line of lines) {
-                // +1 for the newline character (except the last line)
                 const lineLength = line.length + (result ? 1 : 0);
-                
                 if (totalChars + lineLength <= 190) {
                     if (result) result += '\n';
                     result += line;
@@ -96,16 +93,62 @@
                     break;
                 }
             }
-
-            return {
-                limitedText: result,
-                includedLines: includedLines,
-                totalChars: totalChars,
-                isLimited: result !== text
-            };
+            return { limitedText: result, includedLines: includedLines, totalChars: totalChars };
         }
 
-        // A unified function to handle file processing, called from the button click
+        // AUTO-DETECT MODEL FUNCTION
+        async function detectBestModel() {
+            try {
+                const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${GOOGLE_API_KEY}`;
+                const response = await fetch(listUrl);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error?.message || "Failed to fetch model list");
+                }
+
+                if (!data.models) throw new Error("No models returned from API");
+
+                // Filter for models that support generating content
+                const availableModels = data.models.filter(m => 
+                    m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent")
+                );
+
+                // Priority list: We want 1.5 Flash first, then 1.5 Pro.
+                // We avoid "1.0 Pro" because it often doesn't support images in the same way.
+                
+                let chosenModel = availableModels.find(m => m.name.includes("gemini-1.5-flash"));
+                
+                if (!chosenModel) {
+                    chosenModel = availableModels.find(m => m.name.includes("gemini-1.5-pro"));
+                }
+                
+                // Fallback: Just grab the first one that says "gemini" and isn't purely text (hard to guess, but usually 1.5 is standard now)
+                if (!chosenModel) {
+                     chosenModel = availableModels.find(m => m.name.includes("gemini"));
+                }
+
+                if (chosenModel) {
+                    // The API returns names like "models/gemini-1.5-flash". We can use that directly.
+                    // But usually we just need the name part for the URL construction if we construct manually,
+                    // or just use the full name in the URL path.
+                    // The standard URL is models/{model}:generateContent.
+                    // The data.name usually includes "models/".
+                    
+                    // Let's strip "models/" just to be safe for our URL builder below
+                    detectedModelName = chosenModel.name.replace("models/", "");
+                    console.log("Auto-detected model:", detectedModelName);
+                    return detectedModelName;
+                } else {
+                    throw new Error("contact sim");
+                }
+
+            } catch (e) {
+                console.error("Model detection failed", e);
+                throw e;
+            }
+        }
+
         async function handleFiles(files) {
             if (files.length === 0) {
                 resultsDiv.textContent = "Error: Please select one or more image files.";
@@ -113,39 +156,51 @@
                 return;
             }
 
-            resultsDiv.textContent = `Processing ${files.length} image(s)...`;
+            if (!GOOGLE_API_KEY || GOOGLE_API_KEY.includes("PASTE_YOUR")) {
+                resultsDiv.textContent = "Error: contact sim";
+                resultsDiv.classList.add('text-red-400');
+                return;
+            }
+
+            resultsDiv.textContent = `Analyzing images...`;
             resultsDiv.classList.remove('text-red-400', 'within-limit', 'exceed-limit');
             processBtn.disabled = true;
             copyBtn.classList.add('hidden');
 
-            const playerScores = {};
-            let successfulCount = 0;
-            const processingPromises = [];
-
-            for (const file of files) {
-                processingPromises.push(new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = async () => {
-                        const base64Image = reader.result.split(',')[1];
-                        try {
-                            const scores = await processSingleImage(functionUrl, base64Image);
-                            if (scores.length > 0) {
-                                successfulCount++;
-                            }
-                            resolve(scores);
-                        } catch (e) {
-                            reject(e);
-                        }
-                    };
-                    reader.onerror = () => {
-                        reject(new Error("Failed to read the image file."));
-                    };
-                    reader.readAsDataURL(file);
-                }));
-            }
-
             try {
+                // Step 1: Detect Model if not already done
+                if (!detectedModelName) {
+                    await detectBestModel();
+                }
+                
+                resultsDiv.textContent = `Processing ${files.length} image(s)...`;
+
+                const playerScores = {};
+                let successfulCount = 0;
+                const processingPromises = [];
+
+                for (const file of files) {
+                    processingPromises.push(new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = async () => {
+                            const base64Image = reader.result.split(',')[1];
+                            const mimeType = file.type || "image/jpeg";
+                            try {
+                                const scores = await processSingleImage(base64Image, mimeType);
+                                if (scores.length > 0) successfulCount++;
+                                resolve(scores);
+                            } catch (e) {
+                                reject(e);
+                            }
+                        };
+                        reader.onerror = () => reject(new Error("Failed to read file"));
+                        reader.readAsDataURL(file);
+                    }));
+                }
+
                 const results = await Promise.all(processingPromises);
+                
+                // Aggregation Logic
                 results.forEach(scores => {
                     scores.forEach(player => {
                         const normalizedScore = parseFloat(player.score);
@@ -158,29 +213,23 @@
                     score: playerScores[name]
                 })).sort((a, b) => b.score - a.score);
 
-                let displayOutput = '';
                 let clipboardText = '';
 
                 if (sortedScores.length > 0) {
                     sortedScores.forEach(player => {
                         const formattedScore = player.score.toLocaleString('en-US', { maximumFractionDigits: 5 });
                         const line = `${player.name}: ${formattedScore}M`;
-                        displayOutput += `${line}\n`;
                         clipboardText += `${line}\n`;
                     });
 
-                    // Apply character limit to clipboard content (working in background)
                     const limitedResult = applyCharacterLimit(clipboardText.trim());
                     clipboardOutput = limitedResult.limitedText;
 
-                    // Create color-coded display
-                    let colorCodedOutput = `Successfully processed ${successfulCount}/${files.length} image(s).\n\n`;
+                   let colorCodedOutput = `Processed ${successfulCount}/${files.length} image(s).\n\n`;
                     
                     sortedScores.forEach(player => {
                         const formattedScore = player.score.toLocaleString('en-US', { maximumFractionDigits: 5 });
                         const line = `${player.name}: ${formattedScore}M`;
-                        
-                        // Check if this line is included in the clipboard output
                         const isIncluded = limitedResult.includedLines.includes(line);
                         
                         if (isIncluded) {
@@ -197,21 +246,15 @@
                 }
 
             } catch (e) {
-                resultsDiv.textContent = `An error occurred: ${e.message}.`;
+                resultsDiv.textContent = `Error: contact sim`;
                 resultsDiv.classList.add('text-red-400');
             } finally {
                 processBtn.disabled = false;
             }
         }
 
-        // --- Event Listeners ---
-
-        // Listen for the "Process Images" button click
-        processBtn.addEventListener('click', () => {
-            handleFiles(imageInput.files);
-        });
+        processBtn.addEventListener('click', () => handleFiles(imageInput.files));
         
-        // Listen for "Copy to Clipboard" button click
         copyBtn.addEventListener('click', () => {
             try {
                 const tempTextArea = document.createElement('textarea');
@@ -220,110 +263,94 @@
                 tempTextArea.select();
                 document.execCommand('copy');
                 document.body.removeChild(tempTextArea);
-
                 copyBtn.textContent = 'Copied!';
-                setTimeout(() => {
-                    copyBtn.textContent = 'Copy to Clipboard';
-                }, 2000);
+                setTimeout(() => copyBtn.textContent = 'Copy to Clipboard', 2000);
             } catch (err) {
                 console.error('Failed to copy text: ', err);
-                copyBtn.textContent = 'Failed to copy';
             }
         });
 
-        // Handle drag-and-drop on the entire body
-        body.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            body.classList.add('drag-over');
-        });
-
-        body.addEventListener('dragleave', (e) => {
-            // Check if the related target is outside the body
-            if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
-                body.classList.remove('drag-over');
-            }
-        });
-
+        body.addEventListener('dragover', (e) => { e.preventDefault(); body.classList.add('drag-over'); });
+        body.addEventListener('dragleave', (e) => { if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') body.classList.remove('drag-over'); });
         body.addEventListener('drop', (e) => {
-            e.preventDefault();
-            body.classList.remove('drag-over');
-            const files = e.dataTransfer.files;
-            
-            if (files.length > 0) {
-                imageInput.files = files; // Assign files to the input element
-                resultsDiv.textContent = `${files.length} image(s) ready to be processed. Click the button to continue.`;
+            e.preventDefault(); body.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                imageInput.files = e.dataTransfer.files;
+                resultsDiv.textContent = `${e.dataTransfer.files.length} image(s) ready. Click Process.`;
                 copyBtn.classList.add('hidden');
             }
         });
 
-        // Handle pasting images
         window.addEventListener('paste', (e) => {
-            const files = e.clipboardData.files;
-            if (files.length > 0) {
+            if (e.clipboardData.files.length > 0) {
                 e.preventDefault();
-                imageInput.files = files; // Assign files to the input element
-                resultsDiv.textContent = `${files.length} image(s) pasted and ready to be processed. Click the button to continue.`;
+                imageInput.files = e.clipboardData.files;
+                resultsDiv.textContent = `${e.clipboardData.files.length} image(s) pasted. Click Process.`;
                 copyBtn.classList.add('hidden');
             }
         });
 
-        async function processSingleImage(functionUrl, base64Image) {
-            try {
-                const response = await fetch(functionUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ base64Image: base64Image })
-                });
+        async function processSingleImage(base64Image, mimeType) {
+            // Use the detected model name
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${detectedModelName}:generateContent?key=${GOOGLE_API_KEY}`;
+            
+            const promptText = "Extract the character names and their total damage from this DPS report image. Format the output strictly as 'Name: Score' on each line. Example: 'PlayerOne: 10M' or 'PlayerTwo: 500K'. Do not include rank numbers, class names, or extra text. If there are dots in names, include them.";
+
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: promptText },
+                        { inline_data: { mime_type: mimeType, data: base64Image } }
+                    ]
+                }]
+            };
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            const responseJson = await response.json();
+
+            if (!response.ok) throw new Error("contact sim");
+
+            if (responseJson.candidates && responseJson.candidates.length > 0) {
+                const extractedText = responseJson.candidates[0].content.parts[0].text;
+                const detectedScores = [];
+                const processedNames = new Set(); 
+                const lines = extractedText.split('\n');
                 
-                const responseJson = await response.json();
+                lines.forEach(line => {
+                    if (line.includes(':')) {
+                        const parts = line.split(':', 2);
+                        if (parts.length === 2) {
+                            let [name, score_text] = parts;
+                            name = name.trim();
+                            if (name.includes('.')) name = name.split('.')[0];
+                            
+                            if (!processedNames.has(name)) {
+                                processedNames.add(name);
+                                score_text = score_text.trim().toUpperCase();
+                                let score_value;
 
-                if (response.ok && responseJson.candidates && responseJson.candidates.length > 0) {
-                    const extractedText = responseJson.candidates[0].content.parts[0].text;
-                    const detectedScores = [];
-                    const processedNames = new Set(); // Use a Set to track names within a single image
-                    const lines = extractedText.split('\n');
-                    
-                    lines.forEach(line => {
-                        if (line.includes(':')) {
-                            const parts = line.split(':', 2);
-                            if (parts.length === 2) {
-                                let [name, score_text] = parts;
-                                name = name.trim();
-                                
-                                if (name.includes('.')) {
-                                    name = name.split('.')[0];
-                                }
-                                
-                                if (!processedNames.has(name)) {
-                                    processedNames.add(name);
-                                    score_text = score_text.trim().toUpperCase();
-                                    let score_value;
-
-                                    if (score_text.endsWith('K')) {
-                                        score_value = parseFloat(score_text.replace('K', '')) / 1000.0;
-                                        detectedScores.push({ name, score: score_value });
-                                    } else if (score_text.endsWith('M')) {
-                                        score_value = parseFloat(score_text.replace('M', ''));
-                                        detectedScores.push({ name, score: score_value });
-                                    }
+                                if (score_text.endsWith('K')) {
+                                    score_value = parseFloat(score_text.replace('K', '')) / 1000.0;
+                                    detectedScores.push({ name, score: score_value });
+                                } else if (score_text.endsWith('M')) {
+                                    score_value = parseFloat(score_text.replace('M', ''));
+                                    detectedScores.push({ name, score: score_value });
                                 }
                             }
                         }
-                    });
-                    return detectedScores;
-                } else {
-                    throw new Error("DEAD CONTACT SIM");
-                }
-            } catch (e) {
-                throw new Error(`HI ${e.message}`);
+                    }
+                });
+                return detectedScores;
+            } else {
+                throw new Error("contact sim");
             }
         }
     </script>
 </body>
 </html>
-
-
-
 
