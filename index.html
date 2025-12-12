@@ -61,7 +61,7 @@
         // CONFIGURATION
         // ==========================================
         
-        // 1. Use your Cloudflare Worker URL instead of direct API key
+        
         const WORKER_URL = "https://sim-dps-proxy.simeonedoo.workers.dev";
 
         // ==========================================
@@ -115,8 +115,7 @@
                     m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent")
                 );
 
-                // Priority list: We want 1.5 Flash first, then 1.5 Pro.
-                // We avoid "1.0 Pro" because it often doesn't support images in the same way.
+
                 
                 let chosenModel = availableModels.find(m => m.name.includes("gemini-1.5-flash"));
                 
@@ -130,11 +129,7 @@
                 }
 
                 if (chosenModel) {
-                    // The API returns names like "models/gemini-1.5-flash". We can use that directly.
-                    // But usually we just need the name part for the URL construction if we construct manually,
-                    // or just use the full name in the URL path.
-                    // The standard URL is models/{model}:generateContent.
-                    // The data.name usually includes "models/".
+
                     
                     // Let's strip "models/" just to be safe for our URL builder below
                     detectedModelName = chosenModel.name.replace("models/", "");
@@ -348,3 +343,4 @@
     </script>
 </body>
 </html>
+
