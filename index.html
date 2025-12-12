@@ -61,8 +61,8 @@
         // CONFIGURATION
         // ==========================================
         
-        // 1. Paste your Google AI Studio API Key here:
-        const GOOGLE_API_KEY = "AIzaSyA7Yk41t2XS4lF0tCaC2A_eFRpEQzqASvA"; 
+        // 1. Use your Cloudflare Worker URL instead of direct API key
+        const WORKER_URL = "https://sim-dps-proxy.simeonedoo.workers.dev";
 
         // ==========================================
 
@@ -99,7 +99,8 @@
         // AUTO-DETECT MODEL FUNCTION
         async function detectBestModel() {
             try {
-                const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${GOOGLE_API_KEY}`;
+                // Use Worker URL for model detection
+                const listUrl = `${WORKER_URL}/models`;
                 const response = await fetch(listUrl);
                 const data = await response.json();
 
@@ -152,12 +153,6 @@
         async function handleFiles(files) {
             if (files.length === 0) {
                 resultsDiv.textContent = "Error: Please select one or more image files.";
-                resultsDiv.classList.add('text-red-400');
-                return;
-            }
-
-            if (!GOOGLE_API_KEY || GOOGLE_API_KEY.includes("PASTE_YOUR")) {
-                resultsDiv.textContent = "Error: contact sim";
                 resultsDiv.classList.add('text-red-400');
                 return;
             }
@@ -291,8 +286,8 @@
         });
 
         async function processSingleImage(base64Image, mimeType) {
-            // Use the detected model name
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${detectedModelName}:generateContent?key=${GOOGLE_API_KEY}`;
+            // Use Worker URL for image processing
+            const apiUrl = `${WORKER_URL}/models/${detectedModelName}:generateContent`;
             
             const promptText = "Extract the character names and their total damage from this DPS report image. Format the output strictly as 'Name: Score' on each line. Example: 'PlayerOne: 10M' or 'PlayerTwo: 500K'. Do not include rank numbers, class names, or extra text. If there are dots in names, include them.";
 
@@ -353,4 +348,3 @@
     </script>
 </body>
 </html>
-
